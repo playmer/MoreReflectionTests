@@ -1,0 +1,5 @@
+add_subdirectory(Dependencies)
+add_subdirectory(ReflectionExporter)
+add_subdirectory(MetaSystem)
+add_subdirectory(Engine)
+add_subdirectory(Main)
