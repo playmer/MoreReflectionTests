@@ -1,25 +1,168 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using CommandLine;
 
 
 namespace ReflectionExporter
 {
+
+
+
+
+    class CppCodeGenerator
+    {
+        readonly int mIndentSize = 2;
+        private StringBuilder mBuilder;
+        int mNestedScopes;
+
+        private static string GetFullTypeName(CppAst.CppClass aClass)
+        {
+            var classes = new List<string>();
+
+            var builder = new StringBuilder();
+
+            var parent = aClass.Parent;
+
+            while (null != parent && parent is CppAst.CppClass)
+            {
+                var parentClass = parent as CppAst.CppClass;
+                classes.Add(parentClass.Name);
+                parent = parentClass.Parent;
+            }
+
+            classes.Reverse();
+
+            foreach(var cppClass in classes)
+            {
+                builder.Append(cppClass);
+                builder.Append("::");
+            }
+
+            builder.Append(aClass.Name);
+
+            return builder.ToString();
+        }
+
+        public CppCodeGenerator()
+        {
+            mBuilder = new StringBuilder();
+            mNestedScopes = 0;
+        }
+
+        public override string ToString()
+        {
+            return mBuilder.ToString();
+        }
+
+        public void OpenNamespace(string aNamespace)
+        {
+            AddLine($"namespace {aNamespace}");
+            OpenScope();
+        }
+
+        public void AddExternalType(CppAst.CppClass aClass)
+        {
+            var fullTypeName = GetFullTypeName(aClass);
+            var shortTypeName = aClass.Name;
+
+            AddLine($"YTEDefineExternalType({fullTypeName})");
+            OpenScope();
+
+            AddLine($"RegisterType<{shortTypeName}>();");
+            AddLine($"TypeBuilder<{shortTypeName}> builder;");
+
+            foreach (var field in aClass.Fields)
+            {
+                AddLine($"builder.Field<&{shortTypeName}::{field.Name}>(\"{field.Name}\", PropertyBinding::GetSet);");
+            }
+
+            CloseScope();
+        }
+
+        public void CloseNamespace()
+        {
+            CloseScope();
+        }
+
+        public void OpenScope()
+        {
+            AddLine("{");
+            ++mNestedScopes;
+        }
+
+        public void CloseScope()
+        {
+            --mNestedScopes;
+            AddLine("}");
+        }
+
+        public void AddLine(string aLine, bool aComment = false)
+        {
+            var toIndentBy = mIndentSize * mNestedScopes;
+
+            foreach(var line in aLine.Split('\n'))
+            {
+                mBuilder.Append(' ', toIndentBy);
+
+                if (aComment)
+                {
+                    mBuilder.Append("// ");
+                }
+
+                mBuilder.AppendLine(line);
+            }
+        }
+    };
+
+
+
+
+
+
+
+
+
+
+
+
     class Program
     {
         public static string GetCode()
         {
             return @"
 
-struct [[Meta::Reflectable]] Point
+namespace 
 {
-    float x;
-    float y;
+    namespace YTE
+    {
+        struct [[Meta::Reflectable]] YTEStruct{};        
+    }
 
-    __declspec(dllexport) [[Meta::Property(""X"")]] float [[Meta::EditorVisible]] [[Meta::Serialize]] GetX();
-    __declspec(dllexport) [[Meta::Property(""X"")]] float [[Meta::EditorVisible]] [[Meta::Serialize]] SetX();
+    struct [[Meta::Reflectable]] namelessNamespaceStruct{};
+}
+
+struct [[Meta::Reflectable]] Vec3{ float x, y, z; };
+struct [[Meta::Reflectable]] Mat3{ float mData[3][3] ; };
+
+struct [[Meta::Reflectable]] Body {
+   struct [[Meta::Reflectable]] myStruct{};
+    
+  float restitution;
+
+  float massInverse;
+  Mat3  inertiaTensor;
+
+  Vec3 velocity;
+  Vec3 angularVelocity;
+
+  Vec3 impulse;
+  Vec3 angularImpulse;
+
+  void  SetMass(float m);
+  float GetMass() const;
 };
             ";
         }
@@ -49,39 +192,77 @@ struct [[Meta::Reflectable]] Point
             });
         }
 
+        static public void ClassParser(CppAst.CppClass aClass, CppCodeGenerator aGenerator)
+        {
+            bool found = false;
+
+            if (null != aClass.Attributes)
+            {
+                foreach (var attribute in aClass.Attributes)
+                {
+                    if (attribute.Scope == "Meta" && attribute.Name == "Reflectable")
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if (false == found)
+            {
+                return;
+            }
+
+            aGenerator.AddExternalType(aClass);
+
+
+            foreach (var cppClass in aClass.Classes)
+            {
+                ClassParser(cppClass, aGenerator);
+            }
+        }
+
+        static public void NamespaceParser(CppAst.CppNamespace aNamespace, CppCodeGenerator aGenerator)
+        {
+            aGenerator.OpenNamespace(aNamespace.Name);
+
+            foreach (var cppClass in aNamespace.Classes)
+            {
+                ClassParser(cppClass, aGenerator);
+            }
+
+            foreach (var cppNamespace in aNamespace.Namespaces)
+            {
+                NamespaceParser(cppNamespace, aGenerator);
+            }
+
+            aGenerator.CloseNamespace();
+        }
+
+
         static void Main(string[] args)
         {
 
             var compilation = CppAst.CppParser.Parse(GetCode());
+            var codeGen = new CppCodeGenerator();
 
-            var builder = new StringBuilder();
 
             //if (compilation.HasErrors)
             {
                 Console.WriteLine(compilation.Diagnostics.ToString());
             }
 
-            foreach (var cppClass in compilation.Classes)
+            foreach (var cppNamespace in compilation.Namespaces)
             {
-                builder.AppendFormat("{0}\n", cppClass.Name);
-
-                PrintAttributes(cppClass.Attributes, builder, 1);
-
-                foreach (var function in cppClass.Functions)
-                {
-                    builder.AppendFormat("\tFunction: {0}\n", function.Name);
-                    PrintAttributes(function.Attributes, builder, 2);
-                }
-
-                foreach (var field in cppClass.Fields)
-                {
-                    builder.AppendFormat("\tField: {0}\n", field.Name);
-                    PrintAttributes(field.Attributes, builder, 2);
-                }
+                NamespaceParser(cppNamespace, codeGen);
             }
 
-            Console.WriteLine(builder.ToString());
+            foreach (var cppClass in compilation.Classes)
+            {
+                ClassParser(cppClass, codeGen);
+            }
 
+            var str = codeGen.ToString();
 
             //Parser.Default.ParseArguments<Options>(args).WithParsed<Options>(arguments =>
             //{
