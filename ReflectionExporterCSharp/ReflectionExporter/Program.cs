@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using CommandLine;
 
+using System.Reflection;
+
 
 namespace ReflectionExporter
 {
@@ -172,8 +174,11 @@ struct [[Meta::Reflectable]] Body {
             [Option('v', "verbose", Required = false, HelpText = "Set output to verbose messages.")]
             public bool Verbose { get; set; }
 
+            [Option('s', "sources", Required = false, HelpText = "Pass files (.cpp files) to parse")]
+            public List<string> Sources { get; set; }
+
             [Option('i', "include", Required = false, HelpText = "Pass include directories")]
-            public IEnumerable<string> IncludeDirectories { get; set; }
+            public List<string> IncludeDirectories { get; set; }
         }
 
         static void PrintAttributes(List<CppAst.CppAttribute> aAttributes, StringBuilder aBuilder, int aTabLevel)
@@ -240,36 +245,64 @@ struct [[Meta::Reflectable]] Body {
         }
 
 
-        static void Main(string[] args)
+        static void Main(string[] aArguments)
         {
-
-            var compilation = CppAst.CppParser.Parse(GetCode());
-            var codeGen = new CppCodeGenerator();
-
-
-            //if (compilation.HasErrors)
+            if (0 == aArguments.Count())
             {
-                Console.WriteLine(compilation.Diagnostics.ToString());
+                var compilation = CppAst.CppParser.Parse(GetCode());
+                var codeGen = new CppCodeGenerator();
+
+
+                //if (compilation.HasErrors)
+                {
+                    Console.WriteLine(compilation.Diagnostics.ToString());
+                }
+
+                foreach (var cppNamespace in compilation.Namespaces)
+                {
+                    NamespaceParser(cppNamespace, codeGen);
+                }
+
+                foreach (var cppClass in compilation.Classes)
+                {
+                    ClassParser(cppClass, codeGen);
+                }
+
+                var str = codeGen.ToString();
+
+                return;
             }
 
-            foreach (var cppNamespace in compilation.Namespaces)
+            Parser.Default.ParseArguments<Options>(aArguments).WithParsed<Options>(arguments =>
             {
-                NamespaceParser(cppNamespace, codeGen);
-            }
+                var options = new CppAst.CppParserOptions();
+                options.ConfigureForWindowsMsvc(CppAst.CppTargetCpu.X86_64, CppAst.CppVisualStudioVersion.VS2019);
 
-            foreach (var cppClass in compilation.Classes)
-            {
-                ClassParser(cppClass, codeGen);
-            }
+                // We have to use reflection to set this because the Sun the burns in the sky has forsaken us.
+                var optionsType = typeof(CppAst.CppParserOptions);
+                var includeFoldersProperty = optionsType.GetProperty("IncludeFolders");
+                includeFoldersProperty.SetValue(options, arguments.IncludeDirectories);
 
-            var str = codeGen.ToString();
+                var compilation = CppAst.CppParser.ParseFiles(arguments.Sources, options);
+                var codeGen = new CppCodeGenerator();
 
-            //Parser.Default.ParseArguments<Options>(args).WithParsed<Options>(arguments =>
-            //{
-            //    var options = new CppAst.CppParserOptions();
-            //    options. = arguments.
-            //    CppAst.CppParser.ParseFile("");
-            //});
+                //if (compilation.HasErrors)
+                {
+                    Console.WriteLine(compilation.Diagnostics.ToString());
+                }
+
+                foreach (var cppNamespace in compilation.Namespaces)
+                {
+                    NamespaceParser(cppNamespace, codeGen);
+                }
+
+                foreach (var cppClass in compilation.Classes)
+                {
+                    ClassParser(cppClass, codeGen);
+                }
+
+                var str = codeGen.ToString();
+            });
         }
     }
 }
