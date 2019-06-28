@@ -171,7 +171,7 @@ struct [[Meta::Reflectable]] Body {
 
         public class Options
         {
-            [Option('v', "verbose", Required = false, HelpText = "Set output to verbose messages.")]
+            [Option('v', "verbose", Default = false, Required = false, HelpText = "Set output to verbose messages.")]
             public bool Verbose { get; set; }
 
             [Option('s', "sources", Required = false, HelpText = "Pass files (.cpp files) to parse")]
@@ -247,6 +247,10 @@ struct [[Meta::Reflectable]] Body {
 
         static void Main(string[] aArguments)
         {
+            var optionsStringTest = new Options { IncludeDirectories = new List<string> { "C:/Program Files/Qt/include", "glm/include", "GLFW/glfw" }, Sources = new List<string> { "Source/main.cpp", "Source/Arguments.cpp" } };
+
+            var argumentString = CommandLine.Parser.Default.FormatCommandLine(optionsStringTest);
+
             if (0 == aArguments.Count())
             {
                 var compilation = CppAst.CppParser.Parse(GetCode());
@@ -285,22 +289,22 @@ struct [[Meta::Reflectable]] Body {
 
                 var compilation = CppAst.CppParser.ParseFiles(arguments.Sources, options);
                 var codeGen = new CppCodeGenerator();
-
+                
                 //if (compilation.HasErrors)
                 {
                     Console.WriteLine(compilation.Diagnostics.ToString());
                 }
-
+                
                 foreach (var cppNamespace in compilation.Namespaces)
                 {
                     NamespaceParser(cppNamespace, codeGen);
                 }
-
+                
                 foreach (var cppClass in compilation.Classes)
                 {
                     ClassParser(cppClass, codeGen);
                 }
-
+                
                 var str = codeGen.ToString();
             });
         }
