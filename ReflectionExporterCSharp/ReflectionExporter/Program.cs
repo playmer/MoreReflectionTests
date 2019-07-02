@@ -174,11 +174,14 @@ struct [[Meta::Reflectable]] Body {
             [Option('v', "verbose", Default = false, Required = false, HelpText = "Set output to verbose messages.")]
             public bool Verbose { get; set; }
 
-            [Option('s', "sources", Required = false, HelpText = "Pass files (.cpp files) to parse")]
+            [Option('s', "sources", Required = true, HelpText = "Pass files (.cpp files) to parse")]
             public List<string> Sources { get; set; }
 
-            [Option('i', "include", Required = false, HelpText = "Pass include directories")]
+            [Option('i', "include", Required = true, HelpText = "Pass include directories")]
             public List<string> IncludeDirectories { get; set; }
+
+            [Option('o', "outputFile", Required = true, HelpText = "Pass where to export reflection.")]
+            public string OutputFile { get; set; }
         }
 
         static void PrintAttributes(List<CppAst.CppAttribute> aAttributes, StringBuilder aBuilder, int aTabLevel)
@@ -305,7 +308,9 @@ struct [[Meta::Reflectable]] Body {
                     ClassParser(cppClass, codeGen);
                 }
                 
-                var str = codeGen.ToString();
+                var textFile = codeGen.ToString();
+
+                System.IO.File.WriteAllText(arguments.OutputFile, textFile);
             });
         }
     }
