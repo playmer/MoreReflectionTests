@@ -175,10 +175,10 @@ struct [[Meta::Reflectable]] Body {
             public bool Verbose { get; set; }
 
             [Option('s', "sources", Required = true, HelpText = "Pass files (.cpp files) to parse")]
-            public List<string> Sources { get; set; }
+            public IEnumerable<string> Sources { get; set; }
 
             [Option('i', "include", Required = true, HelpText = "Pass include directories")]
-            public List<string> IncludeDirectories { get; set; }
+            public IEnumerable<string> IncludeDirectories { get; set; }
 
             [Option('o', "outputFile", Required = true, HelpText = "Pass where to export reflection.")]
             public string OutputFile { get; set; }
@@ -250,47 +250,37 @@ struct [[Meta::Reflectable]] Body {
 
         static void Main(string[] aArguments)
         {
-            var optionsStringTest = new Options { IncludeDirectories = new List<string> { "C:/Program Files/Qt/include", "glm/include", "GLFW/glfw" }, Sources = new List<string> { "Source/main.cpp", "Source/Arguments.cpp" } };
-
-            var argumentString = CommandLine.Parser.Default.FormatCommandLine(optionsStringTest);
-
-            if (0 == aArguments.Count())
+            if (null != aArguments)
             {
-                var compilation = CppAst.CppParser.Parse(GetCode());
-                var codeGen = new CppCodeGenerator();
-
-
-                //if (compilation.HasErrors)
+                foreach (var argument in aArguments)
                 {
-                    Console.WriteLine(compilation.Diagnostics.ToString());
+                    Console.WriteLine(argument);
                 }
-
-                foreach (var cppNamespace in compilation.Namespaces)
-                {
-                    NamespaceParser(cppNamespace, codeGen);
-                }
-
-                foreach (var cppClass in compilation.Classes)
-                {
-                    ClassParser(cppClass, codeGen);
-                }
-
-                var str = codeGen.ToString();
-
-                return;
             }
+
+            var optionsStringTest = new Options {
+                IncludeDirectories = new List<string> { "C:/Users/jofisher/Documents/Repos/XboxEngine", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/dependencies" },
+                Sources = new List<string> { "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/component/ComponentAggregate.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/entity/ArchetypeRef.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/entity/Entity.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/entity/EntityRef.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/RenderSystem.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/Simulation.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/World.cpp" },
+                OutputFile = "ReflectionCode.cpp" };
+            
+            var argumentString = CommandLine.Parser.Default.FormatCommandLine(optionsStringTest);
 
             Parser.Default.ParseArguments<Options>(aArguments).WithParsed<Options>(arguments =>
             {
+                var additionalArguments = new List<string> { "-std=c++17" };
+
                 var options = new CppAst.CppParserOptions();
                 options.ConfigureForWindowsMsvc(CppAst.CppTargetCpu.X86_64, CppAst.CppVisualStudioVersion.VS2019);
 
-                // We have to use reflection to set this because the Sun the burns in the sky has forsaken us.
+                // We have to use reflection to set this because the Sun that burns in the sky has forsaken us.
                 var optionsType = typeof(CppAst.CppParserOptions);
                 var includeFoldersProperty = optionsType.GetProperty("IncludeFolders");
-                includeFoldersProperty.SetValue(options, arguments.IncludeDirectories);
+                includeFoldersProperty.SetValue(options, arguments.IncludeDirectories.ToList());
 
-                var compilation = CppAst.CppParser.ParseFiles(arguments.Sources, options);
+                var additionalArgumentsProperty = optionsType.GetProperty("AdditionalArguments");
+                includeFoldersProperty.SetValue(options, additionalArguments);
+
+                var compilation = CppAst.CppParser.ParseFiles(arguments.Sources.ToList(), options);
                 var codeGen = new CppCodeGenerator();
                 
                 //if (compilation.HasErrors)
