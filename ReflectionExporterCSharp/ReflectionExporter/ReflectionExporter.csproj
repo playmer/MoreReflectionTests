@@ -7,7 +7,8 @@
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.5.0" />
-    <PackageReference Include="CppAst" Version="0.5.5" />
+    <PackageReference Include="CppAst" Version="0.5.7" />
+    <PackageReference Include="Microsoft.Packaging.Tools.Trimming" Version="1.1.0-preview1-26619-01" />
   </ItemGroup>
 
 </Project>

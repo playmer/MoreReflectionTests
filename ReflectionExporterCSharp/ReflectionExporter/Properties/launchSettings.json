@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ReflectionExporter": {
+      "commandName": "Project",
+      "commandLineArgs": "--include C:/Repositories/XboxEngine C:/Repositories/XboxEngine/pilcrow/dependencies C:/Repositories/XboxEngine/pilcrow/dependencies/glm/glm-0.9.8.5/include C:/Repositories/XboxEngine/pilcrow/dependencies/detection_idiom/include/ C:/Repositories/XboxEngine/pilcrow/dependencies/slot_map/include/ C:/Repositories/XboxEngine/pilcrow/dependencies/glfw/include C:/Repositories/XboxEngine/pilcrow/dependencies/glfw/src C:/Repositories/XboxEngine/build/pilcrow/dependencies/glfw/src C:/Repositories/XboxEngine/build/pilcrow/dependencies/freetype/include C:/Repositories/XboxEngine/pilcrow/dependencies/freetype/include C:/Repositories/XboxEngine/pilcrow/dependencies/Utils/include C:/Repositories/XboxEngine/pilcrow/dependencies/Utils/include/Utils --outputFile C:/Repositories/XboxEngine/build/pilcrow/engine/core/ReflectionCode.cpp --sources C:/Repositories/XboxEngine/pilcrow/engine/core/component/ComponentAggregate.cpp C:/Repositories/XboxEngine/pilcrow/engine/core/entity/ArchetypeRef.cpp C:/Repositories/XboxEngine/pilcrow/engine/core/entity/Entity.cpp C:/Repositories/XboxEngine/pilcrow/engine/core/entity/EntityRef.cpp C:/Repositories/XboxEngine/pilcrow/engine/core/RenderSystem.cpp C:/Repositories/XboxEngine/pilcrow/engine/core/Simulation.cpp C:/Repositories/XboxEngine/pilcrow/engine/core/World.cpp"
+    }
+  }
+}

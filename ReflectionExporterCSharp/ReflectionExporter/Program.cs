@@ -10,14 +10,13 @@ using System.Reflection;
 
 namespace ReflectionExporter
 {
-
-
-
-
     class CppCodeGenerator
     {
         readonly int mIndentSize = 2;
+        private StringBuilder mIncludesBuilder;
         private StringBuilder mBuilder;
+        private List<string> mClasses;
+        string mTargetName;
         int mNestedScopes;
 
         private static string GetFullTypeName(CppAst.CppClass aClass)
@@ -48,15 +47,39 @@ namespace ReflectionExporter
             return builder.ToString();
         }
 
-        public CppCodeGenerator()
+        public CppCodeGenerator(string aTargetName)
         {
             mBuilder = new StringBuilder();
+            mIncludesBuilder = new StringBuilder();
+            mClasses = new List<string>();
+            mTargetName = aTargetName;
             mNestedScopes = 0;
+
+            mIncludesBuilder.Append($"#include \"SimpleReflection/Meta.hpp\"\n");
         }
 
+        // Do not call this a second time, only call this when you're done with the object.
         public override string ToString()
         {
-            return mBuilder.ToString();
+            // Generate a ReflectionInitialize function.
+
+            OpenNamespace($"{mTargetName}_ReflectionInitialize");
+
+            AddLine($"void InitializeReflection()");
+            OpenScope();
+
+            foreach (var reflectedClass in mClasses)
+            {
+                AddLine($"srefl::InitializeType<{reflectedClass}>();");
+            }
+
+            CloseScope();
+            CloseNamespace();
+
+            // Actually make a string to return.
+            mIncludesBuilder.Append('\n');
+            mIncludesBuilder.Append(mBuilder.ToString());
+            return mIncludesBuilder.ToString();
         }
 
         public void OpenNamespace(string aNamespace)
@@ -65,12 +88,16 @@ namespace ReflectionExporter
             OpenScope();
         }
 
-        public void AddExternalType(CppAst.CppClass aClass)
+        public void AddExternalType(CppAst.CppClass aClass, StringBuilder aLog)
         {
             var fullTypeName = GetFullTypeName(aClass);
             var shortTypeName = aClass.Name;
 
-            AddLine($"YTEDefineExternalType({fullTypeName})");
+            mClasses.Add(fullTypeName);
+
+            mIncludesBuilder.Append($"#include \"{aClass.Span.Start.File}\"\n");
+
+            AddLine($"sreflDefineExternalType({fullTypeName})");
             OpenScope();
 
             AddLine($"RegisterType<{shortTypeName}>();");
@@ -78,6 +105,23 @@ namespace ReflectionExporter
 
             foreach (var field in aClass.Fields)
             {
+                aLog.Append($"{field.Name}: ");
+
+                // Check to see if we shouldn't expose this field.
+                if (null != field.Attributes)
+                {
+                    foreach (var attribute in field.Attributes)
+                    {
+                        aLog.Append($"{attribute.Scope}::{attribute.Name}, ");
+                        if (attribute.Scope == "Meta" && attribute.Name == "DoNotExpose")
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                aLog.Append("\n");
+
                 AddLine($"builder.Field<&{shortTypeName}::{field.Name}>(\"{field.Name}\", PropertyBinding::GetSet);");
             }
 
@@ -132,43 +176,6 @@ namespace ReflectionExporter
 
     class Program
     {
-        public static string GetCode()
-        {
-            return @"
-
-namespace 
-{
-    namespace YTE
-    {
-        struct [[Meta::Reflectable]] YTEStruct{};        
-    }
-
-    struct [[Meta::Reflectable]] namelessNamespaceStruct{};
-}
-
-struct [[Meta::Reflectable]] Vec3{ float x, y, z; };
-struct [[Meta::Reflectable]] Mat3{ float mData[3][3] ; };
-
-struct [[Meta::Reflectable]] Body {
-   struct [[Meta::Reflectable]] myStruct{};
-    
-  float restitution;
-
-  float massInverse;
-  Mat3  inertiaTensor;
-
-  Vec3 velocity;
-  Vec3 angularVelocity;
-
-  Vec3 impulse;
-  Vec3 angularImpulse;
-
-  void  SetMass(float m);
-  float GetMass() const;
-};
-            ";
-        }
-
         public class Options
         {
             [Option('v', "verbose", Default = false, Required = false, HelpText = "Set output to verbose messages.")]
@@ -182,6 +189,9 @@ struct [[Meta::Reflectable]] Body {
 
             [Option('o', "outputFile", Required = true, HelpText = "Pass where to export reflection.")]
             public string OutputFile { get; set; }
+
+            [Option('t', "targetName", Required = true, HelpText = "Pass where to export reflection.")]
+            public string TargetName { get; set; }
         }
 
         static void PrintAttributes(List<CppAst.CppAttribute> aAttributes, StringBuilder aBuilder, int aTabLevel)
@@ -200,7 +210,7 @@ struct [[Meta::Reflectable]] Body {
             });
         }
 
-        static public void ClassParser(CppAst.CppClass aClass, CppCodeGenerator aGenerator)
+        static public void ClassParser(CppAst.CppClass aClass, CppCodeGenerator aGenerator, StringBuilder aLog, string aTargetName)
         {
             bool found = false;
 
@@ -210,8 +220,16 @@ struct [[Meta::Reflectable]] Body {
                 {
                     if (attribute.Scope == "Meta" && attribute.Name == "Reflectable")
                     {
-                        found = true;
-                        break;
+                        var argument = attribute.Arguments.Trim('"');
+
+                        if (argument == aTargetName)
+                        {
+                            found = true;
+                            break;
+                        }
+
+                        aLog.Append($"{aClass.Name}: {argument}");
+                        aLog.Append("\n");
                     }
                 }
             }
@@ -221,86 +239,92 @@ struct [[Meta::Reflectable]] Body {
                 return;
             }
 
-            aGenerator.AddExternalType(aClass);
+            aGenerator.AddExternalType(aClass, aLog);
 
 
             foreach (var cppClass in aClass.Classes)
             {
-                ClassParser(cppClass, aGenerator);
+                ClassParser(cppClass, aGenerator, aLog, aTargetName);
             }
         }
 
-        static public void NamespaceParser(CppAst.CppNamespace aNamespace, CppCodeGenerator aGenerator)
+        static public void NamespaceParser(CppAst.CppNamespace aNamespace, CppCodeGenerator aGenerator, StringBuilder aLog, string aTargetName)
         {
-            aGenerator.OpenNamespace(aNamespace.Name);
+            //aGenerator.OpenNamespace(aNamespace.Name);
 
             foreach (var cppClass in aNamespace.Classes)
             {
-                ClassParser(cppClass, aGenerator);
+                ClassParser(cppClass, aGenerator, aLog, aTargetName);
             }
 
             foreach (var cppNamespace in aNamespace.Namespaces)
             {
-                NamespaceParser(cppNamespace, aGenerator);
+                NamespaceParser(cppNamespace, aGenerator, aLog, aTargetName);
             }
 
-            aGenerator.CloseNamespace();
+            //aGenerator.CloseNamespace();
+        }
+
+        static void HandleOptions(Options aOptions)
+        {
+            var log = new StringBuilder();
+
+            var additionalArguments = new List<string> { "-std=c++17", "-Wno-everything" };
+
+            // Just printing out the passed command line for testing.
+            var argumentString = CommandLine.Parser.Default.FormatCommandLine(aOptions);
+            Console.WriteLine(argumentString);
+
+            var options = new CppAst.CppParserOptions();
+            options.ParseComments = false;
+            options.ConfigureForWindowsMsvc(CppAst.CppTargetCpu.X86_64, CppAst.CppVisualStudioVersion.VS2019);
+
+            // We have to use reflection to set this because the Sun that burns in the sky has forsaken us.
+            var optionsType = typeof(CppAst.CppParserOptions);
+            var includeFoldersProperty = optionsType.GetProperty("IncludeFolders");
+            includeFoldersProperty.SetValue(options, aOptions.IncludeDirectories.ToList());
+
+            var additionalArgumentsProperty = optionsType.GetProperty("AdditionalArguments");
+            additionalArgumentsProperty.SetValue(options, additionalArguments);
+
+            var compilation = CppAst.CppParser.ParseFiles(aOptions.Sources.ToList(), options);
+
+            var textFile = RunCodeGen(aOptions, compilation, log);
+            var headerFile = $"namespace {aOptions.TargetName}_ReflectionInitialize {{ void InitializeReflection(); }}";
+
+            System.IO.File.WriteAllText(aOptions.OutputFile + ".cpp", textFile);
+            System.IO.File.WriteAllText(aOptions.OutputFile + ".h", headerFile);
+            System.IO.File.WriteAllText("ReflectonLogFile.txt", log.ToString());
+        }
+
+        static string RunCodeGen(Options aOptions, CppAst.CppCompilation aCompilation, StringBuilder aLog)
+        {
+            var codeGen = new CppCodeGenerator(aOptions.TargetName);
+
+            if (aCompilation.HasErrors)
+            {
+                Console.WriteLine(aCompilation.Diagnostics.ToString());
+            }
+
+            foreach (var cppNamespace in aCompilation.Namespaces)
+            {
+                NamespaceParser(cppNamespace, codeGen, aLog, aOptions.TargetName);
+            }
+
+            foreach (var cppClass in aCompilation.Classes)
+            {
+                ClassParser(cppClass, codeGen, aLog, aOptions.TargetName);
+            }
+
+            return codeGen.ToString();
         }
 
 
         static void Main(string[] aArguments)
         {
-            if (null != aArguments)
-            {
-                foreach (var argument in aArguments)
-                {
-                    Console.WriteLine(argument);
-                }
-            }
-
-            var optionsStringTest = new Options {
-                IncludeDirectories = new List<string> { "C:/Users/jofisher/Documents/Repos/XboxEngine", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/dependencies" },
-                Sources = new List<string> { "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/component/ComponentAggregate.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/entity/ArchetypeRef.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/entity/Entity.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/entity/EntityRef.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/RenderSystem.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/Simulation.cpp", "C:/Users/jofisher/Documents/Repos/XboxEngine/pilcrow/engine/core/World.cpp" },
-                OutputFile = "ReflectionCode.cpp" };
-            
-            var argumentString = CommandLine.Parser.Default.FormatCommandLine(optionsStringTest);
-
             Parser.Default.ParseArguments<Options>(aArguments).WithParsed<Options>(arguments =>
             {
-                var additionalArguments = new List<string> { "-std=c++17" };
-
-                var options = new CppAst.CppParserOptions();
-                options.ConfigureForWindowsMsvc(CppAst.CppTargetCpu.X86_64, CppAst.CppVisualStudioVersion.VS2019);
-
-                // We have to use reflection to set this because the Sun that burns in the sky has forsaken us.
-                var optionsType = typeof(CppAst.CppParserOptions);
-                var includeFoldersProperty = optionsType.GetProperty("IncludeFolders");
-                includeFoldersProperty.SetValue(options, arguments.IncludeDirectories.ToList());
-
-                var additionalArgumentsProperty = optionsType.GetProperty("AdditionalArguments");
-                includeFoldersProperty.SetValue(options, additionalArguments);
-
-                var compilation = CppAst.CppParser.ParseFiles(arguments.Sources.ToList(), options);
-                var codeGen = new CppCodeGenerator();
-                
-                //if (compilation.HasErrors)
-                {
-                    Console.WriteLine(compilation.Diagnostics.ToString());
-                }
-                
-                foreach (var cppNamespace in compilation.Namespaces)
-                {
-                    NamespaceParser(cppNamespace, codeGen);
-                }
-                
-                foreach (var cppClass in compilation.Classes)
-                {
-                    ClassParser(cppClass, codeGen);
-                }
-                
-                var textFile = codeGen.ToString();
-
-                System.IO.File.WriteAllText(arguments.OutputFile, textFile);
+                HandleOptions(arguments);
             });
         }
     }
