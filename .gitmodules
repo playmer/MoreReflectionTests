@@ -1,3 +1,0 @@
-[submodule "CppMetaTests/Dependencies/cppast"]
-	path = CppMetaTests/Dependencies/cppast
-	url = https://github.com/playmer/cppast.git
